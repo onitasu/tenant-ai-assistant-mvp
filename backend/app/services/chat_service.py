@@ -54,8 +54,10 @@ class LLMAnswerResult(BaseModel):
 async def create_query(user_input: str) -> str:
     prompt = (
         "以下のユーザー質問を、ベクトル検索用の検索クエリに変換してください。\n"
-        "- 検索クエリは短いキーワード/短いフレーズにしてください\n"
-        "- 質問の本質的な意図を捉えてください\n"
+        "- 検索クエリは短いキーワード/短いフレーズにしてください（1行）\n"
+        "- 重要語（施設名/設備名/手続き/料金/時間/条件/禁止事項/場所など）を漏れなく含める\n"
+        "- 質問文の言い換えではなく、含まれる語を抽出して並べるイメージ\n"
+        "- 推測で情報を足さない\n"
         "- 出力はJSONのみ（search_queryフィールド）\n"
         f"\nユーザー質問: {user_input}"
     )
@@ -141,6 +143,8 @@ async def create_llm_answer(chunk_results: List[ChunkResult], user_input: str) -
         '  "referenced_pages": [1, 2, 3]\n'
         "}\n\n"
         "注意事項:\n"
+        "- 回答は参照資料にある情報のみを使うこと（外部知識は禁止）\n"
+        "- 資料に該当情報がない場合は「資料に記載がありません」と答え、referenced_pages は空配列にすること\n"
         "- 確信度が低い場合は「確認が必要です」と明示してください\n"
         "- referenced_pages は根拠となるページ番号を最大3件までにしてください\n"
         "- 出力はJSONのみ（追加の説明文は禁止）\n"

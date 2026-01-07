@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import List
 
@@ -43,8 +44,16 @@ class Settings(BaseSettings):
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _parse_cors_origins(cls, v):
-        # Allow comma-separated string in env var
+        # Allow JSON array or comma-separated string in env var.
         if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+            except json.JSONDecodeError:
+                parsed = None
+            if isinstance(parsed, list):
+                return [str(s).strip() for s in parsed if str(s).strip()]
+            if isinstance(parsed, str):
+                return [parsed.strip()] if parsed.strip() else []
             return [s.strip() for s in v.split(",") if s.strip()]
         return v
 

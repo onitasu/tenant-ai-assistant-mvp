@@ -14,13 +14,18 @@ import type { FAQ } from "../lib/types";
 export default function FAQList({
   faqs,
   onSelect,
+  disabled = false,
 }: {
   faqs: FAQ[];
   onSelect: (question: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <Accordion disableGutters>
-      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+      <AccordionSummary
+        expandIcon={<ExpandMoreIcon />}
+        sx={disabled ? { opacity: 0.6, pointerEvents: "none" } : undefined}
+      >
         <Typography variant="h6">よくある質問</Typography>
       </AccordionSummary>
       <AccordionDetails>
@@ -29,9 +34,10 @@ export default function FAQList({
             <Accordion key={faq.id} disableGutters>
               <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                 <Typography
-                  sx={{ cursor: "pointer" }}
+                  sx={{ cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.6 : 1 }}
                   onClick={(e) => {
                     e.stopPropagation();
+                    if (disabled) return;
                     onSelect(faq.title);
                   }}
                 >

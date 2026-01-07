@@ -39,6 +39,7 @@ export default function ChatPage() {
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const isSendingRef = React.useRef(false);
 
   // Reference modal state
   const [refOpen, setRefOpen] = React.useState(false);
@@ -60,6 +61,8 @@ export default function ChatPage() {
 
   const sendQuestion = async (question: string) => {
     if (!question.trim()) return;
+    if (loading || isSendingRef.current) return;
+    isSendingRef.current = true;
 
     setError(null);
     setLoading(true);
@@ -123,6 +126,7 @@ export default function ChatPage() {
       setError(e?.message || String(e));
     } finally {
       setLoading(false);
+      isSendingRef.current = false;
     }
   };
 
@@ -155,6 +159,7 @@ export default function ChatPage() {
         <Box sx={{ mb: 2 }}>
           <FAQList
             faqs={faqs}
+            disabled={loading}
             onSelect={(q) => {
               // FAQタイトルをそのまま質問として送信
               sendQuestion(q);

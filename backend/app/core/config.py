@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     gemini_chunk_model: str = Field(default="gemini-3-pro-preview", validation_alias="GEMINI_CHUNK_MODEL")
     # Chat answering: use Gemini 3 Flash Preview
     gemini_chat_model: str = Field(default="gemini-3-flash-preview", validation_alias="GEMINI_CHAT_MODEL")
+    # Image answering: use Gemini 3 Pro Preview (higher accuracy for image recognition)
+    gemini_image_model: str = Field(default="gemini-3-pro-preview", validation_alias="GEMINI_IMAGE_MODEL")
 
     # Storage
     storage_dir: Path = Path("/app/storage")

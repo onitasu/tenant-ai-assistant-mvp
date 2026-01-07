@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional, List
 from pydantic import Field
 
@@ -11,8 +12,8 @@ class DocumentResponse(ORMBase):
     title: str
     status: str
     total_pages: int
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 class DocumentListResponse(ORMBase):
@@ -28,7 +29,7 @@ class PageResponse(ORMBase):
     search_query: Optional[str] = None
     img_description: Optional[str] = None
     image_url: Optional[str] = None
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class PageListResponse(ORMBase):

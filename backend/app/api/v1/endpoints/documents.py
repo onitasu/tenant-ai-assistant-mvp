@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +21,7 @@ from app.schemas.documents import (
     PageListResponse,
     PageResponse,
 )
-from app.services.document_processor import process_uploaded_document, ensure_storage_dirs
+from app.services.document_processor import process_uploaded_document_with_progress, ensure_storage_dirs
 from app.services.indexer import rebuild_chunk_index
 
 router = APIRouter()
@@ -29,12 +32,13 @@ def _infer_file_type(filename: str) -> str:
     return ext
 
 
-@router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def upload_document(
     db: AsyncSession = Depends(get_db),
     file: UploadFile = File(...),
     title: str = Form(default=""),
 ):
+    """Upload document with SSE progress streaming."""
     ensure_storage_dirs()
 
     if not file.filename:
@@ -64,15 +68,28 @@ async def upload_document(
     await db.commit()
     await db.refresh(doc)
 
-    # Process synchronously (MVP)
-    try:
-        await process_uploaded_document(db=db, document=doc, input_file_path=upload_path)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Processing failed: {e}")
+    async def generate_progress():
+        try:
+            async for progress in process_uploaded_document_with_progress(
+                db=db, document=doc, input_file_path=upload_path
+            ):
+                yield f"data: {json.dumps(progress)}\n\n"
 
-    await db.refresh(doc)
+            # Final success message
+            await db.refresh(doc)
+            yield f"data: {json.dumps({'status': 'completed', 'document': DocumentResponse.model_validate(doc).model_dump(mode='json')})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
 
-    return DocumentResponse.model_validate(doc)
+    return StreamingResponse(
+        generate_progress(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("", response_model=DocumentListResponse)

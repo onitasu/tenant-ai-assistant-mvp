@@ -121,19 +121,27 @@ def _detail_description(ex: PageExtraction) -> str:
     return "\n\n".join(parts).strip()
 
 
-async def process_uploaded_document(
+from typing import AsyncGenerator
+
+
+async def process_uploaded_document_with_progress(
     *,
     db: AsyncSession,
     document: Document,
     input_file_path: Path,
-) -> int:
-    """Process an uploaded PDF/PPTX into pages, store in DB, and index in FAISS."""
+) -> AsyncGenerator[dict, None]:
+    """Process an uploaded PDF/PPTX into pages, store in DB, and index in FAISS.
+
+    Yields progress updates as dictionaries.
+    """
 
     ensure_storage_dirs()
 
     # Mark processing
     document.status = DocumentStatus.processing
     await db.commit()
+
+    yield {"status": "processing", "message": "ファイルを変換中..."}
 
     # Convert PPTX -> PDF if needed
     file_type = document.file_type.lower()
@@ -153,6 +161,8 @@ async def process_uploaded_document(
     document.total_pages = total_pages
     await db.commit()
 
+    yield {"status": "processing", "message": f"全{total_pages}ページを処理します", "total_pages": total_pages, "current_page": 0}
+
     # Prepare metadata for FAISS chunk index
     texts: List[str] = []
     metadatas: List[dict] = []
@@ -160,6 +170,13 @@ async def process_uploaded_document(
     try:
         for i in range(total_pages):
             page_number = i + 1
+
+            yield {
+                "status": "processing",
+                "message": f"ページ {page_number}/{total_pages} を処理中...",
+                "total_pages": total_pages,
+                "current_page": page_number,
+            }
 
             # Save page image under storage/images/documents/{document_id}/page_{n}.png
             rel_image_path = Path("documents") / document.id / f"page_{page_number}.png"
@@ -198,6 +215,8 @@ async def process_uploaded_document(
 
         await db.commit()
 
+        yield {"status": "processing", "message": "インデックスを更新中...", "total_pages": total_pages, "current_page": total_pages}
+
         # Update FAISS index
         await asyncio.to_thread(
             faiss_service.add_texts_to_index,
@@ -208,8 +227,6 @@ async def process_uploaded_document(
 
         document.status = DocumentStatus.completed
         await db.commit()
-
-        return total_pages
 
     except Exception:
         await db.rollback()

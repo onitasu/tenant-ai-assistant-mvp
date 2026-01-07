@@ -24,6 +24,7 @@ import {
   Alert,
   MenuItem,
   CircularProgress,
+  LinearProgress,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
@@ -50,6 +51,11 @@ export default function AdminPage() {
   const [uploadTitle, setUploadTitle] = React.useState("");
   const [uploadFile, setUploadFile] = React.useState<File | null>(null);
   const [uploading, setUploading] = React.useState(false);
+  const [uploadProgress, setUploadProgress] = React.useState<{
+    message: string;
+    currentPage: number;
+    totalPages: number;
+  } | null>(null);
 
   const [faqOpen, setFaqOpen] = React.useState(false);
   const [faqEditing, setFaqEditing] = React.useState<FAQ | null>(null);
@@ -97,23 +103,66 @@ export default function AdminPage() {
     if (!uploadFile) return;
     setUploading(true);
     setError(null);
+    setUploadProgress(null);
 
     try {
       const fd = new FormData();
       fd.append("file", uploadFile);
       fd.append("title", uploadTitle);
 
-      await apiPostForm("/documents/upload", fd);
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000/api/v1";
+      const response = await fetch(`${baseUrl}/documents/upload`, {
+        method: "POST",
+        body: fd,
+      });
 
-      setUploadOpen(false);
-      setUploadTitle("");
-      setUploadFile(null);
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.statusText}`);
+      }
 
-      await refresh();
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (reader) {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const text = decoder.decode(value);
+          const lines = text.split("\n");
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.slice(6));
+
+                if (data.status === "processing") {
+                  setUploadProgress({
+                    message: data.message || "処理中...",
+                    currentPage: data.current_page || 0,
+                    totalPages: data.total_pages || 0,
+                  });
+                } else if (data.status === "completed") {
+                  setUploadOpen(false);
+                  setUploadTitle("");
+                  setUploadFile(null);
+                  setUploadProgress(null);
+                  await refresh();
+                } else if (data.status === "error") {
+                  throw new Error(data.message || "処理中にエラーが発生しました");
+                }
+              } catch (parseError) {
+                // Ignore parse errors for incomplete chunks
+              }
+            }
+          }
+        }
+      }
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
       setUploading(false);
+      setUploadProgress(null);
     }
   };
 
@@ -298,7 +347,7 @@ export default function AdminPage() {
       </Container>
 
       {/* Upload Dialog */}
-      <Dialog open={uploadOpen} onClose={() => setUploadOpen(false)} fullWidth>
+      <Dialog open={uploadOpen} onClose={() => !uploading && setUploadOpen(false)} fullWidth>
         <DialogTitle>ドキュメントアップロード</DialogTitle>
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
           <TextField
@@ -306,8 +355,9 @@ export default function AdminPage() {
             value={uploadTitle}
             onChange={(e) => setUploadTitle(e.target.value)}
             placeholder="例: 入居者マニュアル"
+            disabled={uploading}
           />
-          <Button variant="outlined" component="label">
+          <Button variant="outlined" component="label" disabled={uploading}>
             ファイルを選択（PDF / PPTX）
             <input
               type="file"
@@ -319,9 +369,35 @@ export default function AdminPage() {
           <Typography variant="body2" color="text.secondary">
             {uploadFile ? `選択中: ${uploadFile.name}` : "未選択"}
           </Typography>
+
+          {/* Progress display */}
+          {uploading && uploadProgress && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2" color="primary" sx={{ mb: 1 }}>
+                {uploadProgress.message}
+              </Typography>
+              {uploadProgress.totalPages > 0 && (
+                <>
+                  <LinearProgress
+                    variant="determinate"
+                    value={(uploadProgress.currentPage / uploadProgress.totalPages) * 100}
+                    sx={{ height: 8, borderRadius: 4 }}
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+                    {uploadProgress.currentPage} / {uploadProgress.totalPages} ページ完了
+                  </Typography>
+                </>
+              )}
+              {uploadProgress.totalPages === 0 && (
+                <LinearProgress sx={{ height: 8, borderRadius: 4 }} />
+              )}
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setUploadOpen(false)}>キャンセル</Button>
+          <Button onClick={() => setUploadOpen(false)} disabled={uploading}>
+            キャンセル
+          </Button>
           <Button variant="contained" onClick={onUpload} disabled={!uploadFile || uploading}>
             {uploading ? <CircularProgress size={18} /> : "アップロード"}
           </Button>

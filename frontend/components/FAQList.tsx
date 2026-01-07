@@ -19,31 +19,34 @@ export default function FAQList({
   onSelect: (question: string) => void;
 }) {
   return (
-    <Box>
-      <Typography variant="h6" sx={{ mb: 1 }}>
-        よくある質問
-      </Typography>
-
-      {faqs.map((faq) => (
-        <Accordion key={faq.id} disableGutters>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-            <Typography
-              sx={{ cursor: "pointer" }}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelect(faq.title);
-              }}
-            >
-              📋 {faq.title}
-            </Typography>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
-              {faq.answer}
-            </Typography>
-          </AccordionDetails>
-        </Accordion>
-      ))}
-    </Box>
+    <Accordion disableGutters>
+      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+        <Typography variant="h6">よくある質問</Typography>
+      </AccordionSummary>
+      <AccordionDetails>
+        <Box>
+          {faqs.map((faq) => (
+            <Accordion key={faq.id} disableGutters>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                <Typography
+                  sx={{ cursor: "pointer" }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect(faq.title);
+                  }}
+                >
+                  📋 {faq.title}
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                  {faq.answer}
+                </Typography>
+              </AccordionDetails>
+            </Accordion>
+          ))}
+        </Box>
+      </AccordionDetails>
+    </Accordion>
   );
 }

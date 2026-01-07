@@ -32,6 +32,9 @@ class FAQResult(ORMBase):
 
 
 class ChatResponse(ORMBase):
-    faq_results: List[FAQResult]
     answer: str
     references: List[Reference]
+
+
+class RelatedFaqResponse(ORMBase):
+    items: List[FAQResult]

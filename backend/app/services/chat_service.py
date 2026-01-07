@@ -69,7 +69,7 @@ async def create_query(user_input: str) -> str:
     return result.search_query.strip()
 
 
-async def search_faiss_db(user_query: str, top_k: int = 5) -> tuple[List[ChunkResult], List[FAQSearchResult]]:
+async def search_chunk_db(user_query: str, top_k: int = 5) -> List[ChunkResult]:
     # Chunk index
     chunk_docs = faiss_service.similarity_search_with_score(
         dir_path=settings.chunk_faiss_dir,
@@ -91,11 +91,15 @@ async def search_faiss_db(user_query: str, top_k: int = 5) -> tuple[List[ChunkRe
             )
         )
 
+    return chunk_results
+
+
+async def search_faq_db(user_query: str, top_k: int = 3) -> List[FAQSearchResult]:
     # FAQ index
     faq_docs = faiss_service.similarity_search_with_score(
         dir_path=settings.faq_faiss_dir,
         query=user_query,
-        k=3,
+        k=top_k,
     )
 
     faq_results: List[FAQSearchResult] = []
@@ -114,7 +118,7 @@ async def search_faiss_db(user_query: str, top_k: int = 5) -> tuple[List[ChunkRe
             )
         )
 
-    return chunk_results, faq_results
+    return faq_results
 
 
 async def create_llm_answer(chunk_results: List[ChunkResult], user_input: str) -> LLMAnswerResult:
@@ -181,7 +185,7 @@ async def handle_chat(db: AsyncSession, *, user_input: str, session_id: str):
     user_query = await create_query(user_input)
 
     # 4) Vector search
-    chunk_results, faq_results = await search_faiss_db(user_query)
+    chunk_results = await search_chunk_db(user_query)
 
     # 5) LLM answer
     llm = await create_llm_answer(chunk_results, user_input)
@@ -226,4 +230,10 @@ async def handle_chat(db: AsyncSession, *, user_input: str, session_id: str):
 
     await db.commit()
 
-    return faq_results, llm.answer, references
+    return llm.answer, references
+
+
+async def handle_related_faqs(db: AsyncSession, *, user_input: str, session_id: Optional[str] = None):
+    user_query = await create_query(user_input)
+    faq_results = await search_faq_db(user_query)
+    return faq_results

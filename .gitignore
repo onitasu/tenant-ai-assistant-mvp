@@ -1,0 +1,17 @@
+# Node
+node_modules
+.next
+dist
+
+# Python
+__pycache__
+*.pyc
+.venv
+.env
+
+# Storage / DB
+backend/storage/*
+!backend/storage/.gitkeep
+
+# Logs
+*.log

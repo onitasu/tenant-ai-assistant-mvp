@@ -25,10 +25,18 @@ import {
   MenuItem,
   CircularProgress,
   LinearProgress,
+  Collapse,
+  Card,
+  CardMedia,
+  CardContent,
+  Chip,
+  Grid,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import UploadIcon from "@mui/icons-material/Upload";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 
 import { apiDelete, apiGet, apiPostForm, apiPostJson, apiPutJson } from "../../lib/api";
 import type {
@@ -56,6 +64,8 @@ export default function AdminPage() {
     currentPage: number;
     totalPages: number;
   } | null>(null);
+
+  const [expandedDocId, setExpandedDocId] = React.useState<string | null>(null);
 
   const [faqOpen, setFaqOpen] = React.useState(false);
   const [faqEditing, setFaqEditing] = React.useState<FAQ | null>(null);
@@ -272,6 +282,7 @@ export default function AdminPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
+                <TableCell width={40}></TableCell>
                 <TableCell>タイトル</TableCell>
                 <TableCell>ページ数</TableCell>
                 <TableCell>ステータス</TableCell>
@@ -279,21 +290,111 @@ export default function AdminPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {docs.map((d) => (
-                <TableRow key={d.id}>
-                  <TableCell>{d.title}</TableCell>
-                  <TableCell>{d.total_pages}</TableCell>
-                  <TableCell>{d.status}</TableCell>
-                  <TableCell align="right">
-                    <IconButton onClick={() => onDeleteDoc(d.id)} aria-label="delete">
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {docs.map((d) => {
+                const docPages = pages.filter((p) => p.document_id === d.id);
+                const isExpanded = expandedDocId === d.id;
+                return (
+                  <React.Fragment key={d.id}>
+                    <TableRow
+                      hover
+                      sx={{ cursor: "pointer" }}
+                      onClick={() => setExpandedDocId(isExpanded ? null : d.id)}
+                    >
+                      <TableCell>
+                        <IconButton size="small">
+                          {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                        </IconButton>
+                      </TableCell>
+                      <TableCell>{d.title}</TableCell>
+                      <TableCell>{d.total_pages}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={d.status}
+                          size="small"
+                          color={
+                            d.status === "completed"
+                              ? "success"
+                              : d.status === "processing"
+                              ? "warning"
+                              : d.status === "error"
+                              ? "error"
+                              : "default"
+                          }
+                        />
+                      </TableCell>
+                      <TableCell align="right" onClick={(e) => e.stopPropagation()}>
+                        <IconButton onClick={() => onDeleteDoc(d.id)} aria-label="delete">
+                          <DeleteIcon />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell colSpan={5} sx={{ py: 0, borderBottom: isExpanded ? undefined : "none" }}>
+                        <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                          <Box sx={{ py: 2 }}>
+                            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: "bold" }}>
+                              チャンク一覧（{docPages.length}件）
+                            </Typography>
+                            {docPages.length === 0 ? (
+                              <Typography variant="body2" color="text.secondary">
+                                チャンクがありません
+                              </Typography>
+                            ) : (
+                              <Grid container spacing={2}>
+                                {docPages.map((p) => (
+                                  <Grid item xs={12} sm={6} md={4} key={p.id}>
+                                    <Card variant="outlined" sx={{ height: "100%" }}>
+                                      {p.image_url && (
+                                        <CardMedia
+                                          component="img"
+                                          height="120"
+                                          image={p.image_url}
+                                          alt={`Page ${p.page_number}`}
+                                          sx={{ objectFit: "contain", bgcolor: "#f5f5f5" }}
+                                        />
+                                      )}
+                                      <CardContent sx={{ py: 1 }}>
+                                        <Typography variant="subtitle2" gutterBottom>
+                                          P.{p.page_number}: {p.title || "(無題)"}
+                                        </Typography>
+                                        <Typography
+                                          variant="caption"
+                                          color="primary"
+                                          component="div"
+                                          sx={{ mb: 0.5 }}
+                                        >
+                                          検索クエリ: {p.search_query}
+                                        </Typography>
+                                        {p.page_text && (
+                                          <Typography
+                                            variant="caption"
+                                            color="text.secondary"
+                                            sx={{
+                                              display: "-webkit-box",
+                                              WebkitLineClamp: 2,
+                                              WebkitBoxOrient: "vertical",
+                                              overflow: "hidden",
+                                            }}
+                                          >
+                                            {p.page_text}
+                                          </Typography>
+                                        )}
+                                      </CardContent>
+                                    </Card>
+                                  </Grid>
+                                ))}
+                              </Grid>
+                            )}
+                          </Box>
+                        </Collapse>
+                      </TableCell>
+                    </TableRow>
+                  </React.Fragment>
+                );
+              })}
               {docs.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={4}>ドキュメントがありません</TableCell>
+                  <TableCell colSpan={5}>ドキュメントがありません</TableCell>
                 </TableRow>
               )}
             </TableBody>

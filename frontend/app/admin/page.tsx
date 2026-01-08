@@ -25,20 +25,31 @@ import {
   MenuItem,
   CircularProgress,
   LinearProgress,
-  Collapse,
-  Card,
-  CardMedia,
-  CardContent,
   Chip,
-  Grid,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import UploadIcon from "@mui/icons-material/Upload";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
-import { apiDelete, apiGet, apiPostForm, apiPostJson, apiPutJson } from "../../lib/api";
+import { apiDelete, apiGet, apiPostJson, apiPutJson } from "../../lib/api";
 import type {
   Document,
   DocumentListResponse,
@@ -47,6 +58,48 @@ import type {
   Page,
   PageListResponse,
 } from "../../lib/types";
+
+interface SortableFaqRowProps {
+  faq: FAQ;
+  onEdit: (faq: FAQ) => void;
+  onDelete: (id: string) => void;
+}
+
+function SortableFaqRow({ faq, onEdit, onDelete }: SortableFaqRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: faq.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    backgroundColor: isDragging ? "#f5f5f5" : undefined,
+  };
+
+  return (
+    <TableRow ref={setNodeRef} style={style}>
+      <TableCell sx={{ width: 40, cursor: "grab" }} {...attributes} {...listeners}>
+        <DragIndicatorIcon sx={{ color: "action.active" }} />
+      </TableCell>
+      <TableCell>{faq.title}</TableCell>
+      <TableCell>{faq.page_id ? faq.page_id.slice(0, 8) + "..." : "-"}</TableCell>
+      <TableCell align="right">
+        <IconButton onClick={() => onEdit(faq)} aria-label="edit">
+          <EditIcon />
+        </IconButton>
+        <IconButton onClick={() => onDelete(faq.id)} aria-label="delete">
+          <DeleteIcon />
+        </IconButton>
+      </TableCell>
+    </TableRow>
+  );
+}
 
 export default function AdminPage() {
   const [docs, setDocs] = React.useState<Document[]>([]);
@@ -69,16 +122,20 @@ export default function AdminPage() {
     totalPages: number;
   } | null>(null);
 
-  const [expandedDocId, setExpandedDocId] = React.useState<string | null>(null);
-
   const [faqOpen, setFaqOpen] = React.useState(false);
   const [faqEditing, setFaqEditing] = React.useState<FAQ | null>(null);
   const [faqTitle, setFaqTitle] = React.useState("");
   const [faqSearchQuery, setFaqSearchQuery] = React.useState("");
   const [faqAnswer, setFaqAnswer] = React.useState("");
   const [faqPageId, setFaqPageId] = React.useState<string>("");
-  const [faqOrder, setFaqOrder] = React.useState<number>(0);
   const [faqSaving, setFaqSaving] = React.useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   const refresh = async () => {
     setError(null);
@@ -210,7 +267,6 @@ export default function AdminPage() {
     setFaqSearchQuery(faq?.search_query || "");
     setFaqAnswer(faq?.answer || "");
     setFaqPageId(faq?.page_id || "");
-    setFaqOrder(faq?.display_order || 0);
     setFaqOpen(true);
   };
 
@@ -224,12 +280,12 @@ export default function AdminPage() {
         search_query: faqSearchQuery,
         answer: faqAnswer,
         page_id: faqPageId || null,
-        display_order: faqOrder,
       };
 
       if (faqEditing) {
         await apiPutJson(`/faqs/${faqEditing.id}`, payload);
       } else {
+        // New FAQ - display_order will be auto-assigned by backend
         await apiPostJson(`/faqs`, payload);
       }
 
@@ -252,6 +308,31 @@ export default function AdminPage() {
       await refresh();
     } catch (e: any) {
       setError(e?.message || String(e));
+    }
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = faqs.findIndex((f) => f.id === active.id);
+    const newIndex = faqs.findIndex((f) => f.id === over.id);
+
+    const newFaqs = arrayMove(faqs, oldIndex, newIndex);
+    setFaqs(newFaqs);
+
+    // Build reorder payload
+    const items = newFaqs.map((f, idx) => ({
+      id: f.id,
+      display_order: idx + 1,
+    }));
+
+    try {
+      const result = await apiPutJson<FAQListResponse>("/faqs/reorder", { items });
+      setFaqs(result.items);
+    } catch (e: any) {
+      setError(e?.message || String(e));
+      await refresh();
     }
   };
 
@@ -281,7 +362,7 @@ export default function AdminPage() {
       <AppBar position="sticky">
         <Toolbar>
           <Typography variant="h6" sx={{ flexGrow: 1 }}>
-            🏢 管理画面
+            管理画面
           </Typography>
           <Link href="/" color="inherit" underline="hover">
             チャット画面
@@ -314,7 +395,6 @@ export default function AdminPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
-                <TableCell width={40}></TableCell>
                 <TableCell>タイトル</TableCell>
                 <TableCell>ページ数</TableCell>
                 <TableCell>ステータス</TableCell>
@@ -322,111 +402,35 @@ export default function AdminPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {docs.map((d) => {
-                const docPages = pages.filter((p) => p.document_id === d.id);
-                const isExpanded = expandedDocId === d.id;
-                return (
-                  <React.Fragment key={d.id}>
-                    <TableRow
-                      hover
-                      sx={{ cursor: "pointer" }}
-                      onClick={() => setExpandedDocId(isExpanded ? null : d.id)}
-                    >
-                      <TableCell>
-                        <IconButton size="small">
-                          {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-                        </IconButton>
-                      </TableCell>
-                      <TableCell>{d.title}</TableCell>
-                      <TableCell>{d.total_pages}</TableCell>
-                      <TableCell>
-                        <Chip
-                          label={d.status}
-                          size="small"
-                          color={
-                            d.status === "completed"
-                              ? "success"
-                              : d.status === "processing"
-                              ? "warning"
-                              : d.status === "error"
-                              ? "error"
-                              : "default"
-                          }
-                        />
-                      </TableCell>
-                      <TableCell align="right" onClick={(e) => e.stopPropagation()}>
-                        <IconButton onClick={() => onDeleteDoc(d.id)} aria-label="delete">
-                          <DeleteIcon />
-                        </IconButton>
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell colSpan={5} sx={{ py: 0, borderBottom: isExpanded ? undefined : "none" }}>
-                        <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                          <Box sx={{ py: 2 }}>
-                            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: "bold" }}>
-                              チャンク一覧（{docPages.length}件）
-                            </Typography>
-                            {docPages.length === 0 ? (
-                              <Typography variant="body2" color="text.secondary">
-                                チャンクがありません
-                              </Typography>
-                            ) : (
-                              <Grid container spacing={2}>
-                                {docPages.map((p) => (
-                                  <Grid item xs={12} sm={6} md={4} key={p.id}>
-                                    <Card variant="outlined" sx={{ height: "100%" }}>
-                                      {p.image_url && (
-                                        <CardMedia
-                                          component="img"
-                                          height="120"
-                                          image={p.image_url}
-                                          alt={`Page ${p.page_number}`}
-                                          sx={{ objectFit: "contain", bgcolor: "#f5f5f5" }}
-                                        />
-                                      )}
-                                      <CardContent sx={{ py: 1 }}>
-                                        <Typography variant="subtitle2" gutterBottom>
-                                          P.{p.page_number}: {p.title || "(無題)"}
-                                        </Typography>
-                                        <Typography
-                                          variant="caption"
-                                          color="primary"
-                                          component="div"
-                                          sx={{ mb: 0.5 }}
-                                        >
-                                          検索クエリ: {p.search_query}
-                                        </Typography>
-                                        {p.page_text && (
-                                          <Typography
-                                            variant="caption"
-                                            color="text.secondary"
-                                            sx={{
-                                              display: "-webkit-box",
-                                              WebkitLineClamp: 2,
-                                              WebkitBoxOrient: "vertical",
-                                              overflow: "hidden",
-                                            }}
-                                          >
-                                            {p.page_text}
-                                          </Typography>
-                                        )}
-                                      </CardContent>
-                                    </Card>
-                                  </Grid>
-                                ))}
-                              </Grid>
-                            )}
-                          </Box>
-                        </Collapse>
-                      </TableCell>
-                    </TableRow>
-                  </React.Fragment>
-                );
-              })}
+              {docs.map((d) => (
+                <TableRow key={d.id}>
+                  <TableCell>{d.title}</TableCell>
+                  <TableCell>{d.total_pages}</TableCell>
+                  <TableCell>
+                    <Chip
+                      label={d.status}
+                      size="small"
+                      color={
+                        d.status === "completed"
+                          ? "success"
+                          : d.status === "processing"
+                          ? "warning"
+                          : d.status === "error"
+                          ? "error"
+                          : "default"
+                      }
+                    />
+                  </TableCell>
+                  <TableCell align="right">
+                    <IconButton onClick={() => onDeleteDoc(d.id)} aria-label="delete">
+                      <DeleteIcon />
+                    </IconButton>
+                  </TableCell>
+                </TableRow>
+              ))}
               {docs.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={5}>ドキュメントがありません</TableCell>
+                  <TableCell colSpan={4}>ドキュメントがありません</TableCell>
                 </TableRow>
               )}
             </TableBody>
@@ -512,28 +516,32 @@ export default function AdminPage() {
           <Table size="small">
             <TableHead>
               <TableRow>
+                <TableCell sx={{ width: 40 }}></TableCell>
                 <TableCell>タイトル</TableCell>
-                <TableCell>表示順</TableCell>
                 <TableCell>参照ページ</TableCell>
                 <TableCell align="right">操作</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {faqs.map((f) => (
-                <TableRow key={f.id}>
-                  <TableCell>{f.title}</TableCell>
-                  <TableCell>{f.display_order}</TableCell>
-                  <TableCell>{f.page_id ? f.page_id : "-"}</TableCell>
-                  <TableCell align="right">
-                    <IconButton onClick={() => openFaqDialog(f)} aria-label="edit">
-                      <EditIcon />
-                    </IconButton>
-                    <IconButton onClick={() => deleteFaq(f.id)} aria-label="delete">
-                      <DeleteIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+              >
+                <SortableContext
+                  items={faqs.map((f) => f.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {faqs.map((f) => (
+                    <SortableFaqRow
+                      key={f.id}
+                      faq={f}
+                      onEdit={openFaqDialog}
+                      onDelete={deleteFaq}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
               {faqs.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={4}>FAQがありません</TableCell>
@@ -616,14 +624,14 @@ export default function AdminPage() {
                 gap: 2,
               }}
             >
-              <Box sx={{ display: "flex", justifyContent: "center" }}>
+              <Box sx={{ display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
                 {pageDetail.image_url ? (
                   <>
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={pageDetail.image_url}
                       alt={`P.${pageDetail.page_number}`}
-                      style={{ maxWidth: "100%", height: "auto", borderRadius: 8 }}
+                      style={{ maxWidth: "100%", maxHeight: "60vh", objectFit: "contain", borderRadius: 8 }}
                     />
                   </>
                 ) : (
@@ -718,14 +726,6 @@ export default function AdminPage() {
               </MenuItem>
             ))}
           </TextField>
-
-          <TextField
-            type="number"
-            label="表示順"
-            value={faqOrder}
-            onChange={(e) => setFaqOrder(parseInt(e.target.value || "0", 10))}
-            fullWidth
-          />
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setFaqOpen(false)}>キャンセル</Button>

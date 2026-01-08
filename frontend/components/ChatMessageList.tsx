@@ -2,7 +2,6 @@
 
 import * as React from "react";
 import {
-  Avatar,
   Box,
   Card,
   CardActionArea,
@@ -41,10 +40,6 @@ export default function ChatMessageList({
       {messages.map((m, idx) => {
         const isUser = m.role === "user";
         const isFaq = m.role === "faq";
-        const leftAvatar =
-          m.role === "assistant" ? "🤖" : m.role === "faq" ? "📌" : "";
-        const leftAvatarColor =
-          m.role === "assistant" ? "primary.main" : "info.main";
         return (
           <ListItem
             key={m.id || idx}
@@ -55,14 +50,6 @@ export default function ChatMessageList({
             }}
             disableGutters
           >
-            <Box sx={{ display: "flex", gap: 1, width: "100%" }}>
-              {!isUser && (
-                <Avatar sx={{ bgcolor: leftAvatarColor }}>{leftAvatar}</Avatar>
-              )}
-              <Box sx={{ flexGrow: 1 }} />
-              {isUser && <Avatar sx={{ bgcolor: "grey.500" }}>👤</Avatar>}
-            </Box>
-
             {isFaq ? (
               <Card sx={{ mt: 1, maxWidth: "900px", width: "100%" }}>
                 <CardContent>
@@ -155,7 +142,7 @@ export default function ChatMessageList({
                   {m.references && m.references.length > 0 && (
                     <Box sx={{ mt: 2 }}>
                       <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                        📄 参照ページ
+                        参照ページ
                       </Typography>
 
                       <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>

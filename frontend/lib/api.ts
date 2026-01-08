@@ -18,12 +18,14 @@ export async function apiGet<T>(path: string): Promise<T> {
 
 export async function apiPostJson<T>(
   path: string,
-  body: unknown
+  body: unknown,
+  signal?: AbortSignal
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
+    signal,
   });
   if (!res.ok) {
     const txt = await res.text();

@@ -53,11 +53,25 @@ export type FAQResult = {
   relevance_score: number;
 };
 
+export type PrepareResponse = {
+  prepared_query: string;
+  related_faqs: FAQResult[];
+};
+
 export type ChatResponse = {
   answer: string;
   references: Reference[];
 };
 
-export type RelatedFaqResponse = {
-  items: FAQResult[];
+export type MessageResponse = {
+  id: string;
+  role: string;
+  content: string;
+  created_at?: string | null;
+  references: Reference[];
+};
+
+export type ConversationResponse = {
+  session_id: string;
+  messages: MessageResponse[];
 };

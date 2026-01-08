@@ -53,25 +53,42 @@ def _soffice_convert_to_pdf(input_path: Path, out_dir: Path) -> Path:
     return pdf_path
 
 
-def _render_page_to_png(doc: fitz.Document, page_index_zero_based: int, out_path: Path, dpi: int = 200) -> bytes:
+def _extract_page_to_pdf(doc: fitz.Document, page_index_zero_based: int, out_path: Path) -> bytes:
+    """Extract a single page from a PDF and save it as a separate PDF file."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Create a new PDF with just this page
+    new_doc = fitz.open()
+    new_doc.insert_pdf(doc, from_page=page_index_zero_based, to_page=page_index_zero_based)
+    pdf_bytes = new_doc.tobytes()
+    out_path.write_bytes(pdf_bytes)
+    new_doc.close()
+
+    return pdf_bytes
+
+
+def _render_page_to_png(doc: fitz.Document, page_index_zero_based: int, out_path: Path, dpi: int = 150) -> bytes:
+    """Render a page to PNG for preview display."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
     page = doc.load_page(page_index_zero_based)
     pix = page.get_pixmap(dpi=dpi)
     img_bytes = pix.tobytes("png")
-    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(img_bytes)
+
     return img_bytes
 
 
-def _build_image_url(relative_path_from_images_dir: Path) -> str:
-    # images_dir is served at /static/images (see FastAPI StaticFiles mount)
+def _build_static_url(relative_path_from_images_dir: Path) -> str:
+    """Build a public URL for a file in the images directory."""
     rel = relative_path_from_images_dir.as_posix()
     return f"{settings.backend_public_url}/static/images/{rel}"
 
 
 
-async def _extract_page_with_gemini(image_bytes: bytes, image_path: Path | None = None) -> PageExtraction:
+async def _extract_page_with_gemini(pdf_bytes: bytes, pdf_path: Path | None = None) -> PageExtraction:
     prompt = (
-        "この画像はテナント向けマニュアルの1ページです。以下の情報を漏れなく抽出してください。\n\n"
+        "このPDFはテナント向けマニュアルの1ページです。以下の情報を漏れなく抽出してください。\n\n"
         "1. title（ページの見出し/タイトル）\n"
         "- ページ内で最も強調されているセクション番号とタイトルを抽出（例:「1-3 ロケーション＆アクセス」）\n"
         "- 複数のトピックがある場合は「 | 」で連結\n"
@@ -104,20 +121,20 @@ async def _extract_page_with_gemini(image_bytes: bytes, image_path: Path | None 
     )
 
     # If the payload is large, you can use the Gemini Files API (file input).
-    # Otherwise, inline bytes (Part.from_bytes) is sufficient for most page images.
+    # Otherwise, inline bytes (Part.from_bytes) is sufficient for most page PDFs.
     use_files_api = False
-    if image_path and image_path.exists():
+    if pdf_path and pdf_path.exists():
         try:
-            use_files_api = image_path.stat().st_size > 18 * 1024 * 1024
+            use_files_api = pdf_path.stat().st_size > 18 * 1024 * 1024
         except Exception:
             use_files_api = False
 
     if use_files_api:
-        uploaded = await upload_file(path=str(image_path))
+        uploaded = await upload_file(path=str(pdf_path))
         contents = [uploaded, prompt]
     else:
         contents = [
-            part_from_bytes(data=image_bytes, mime_type="image/png"),
+            part_from_bytes(data=pdf_bytes, mime_type="application/pdf"),
             prompt,
         ]
 
@@ -200,15 +217,21 @@ async def process_uploaded_document_with_progress(
                 "current_page": page_number,
             }
 
-            # Save page image under storage/images/documents/{document_id}/page_{n}.png
-            rel_image_path = Path("documents") / document.id / f"page_{page_number}.png"
-            abs_image_path = settings.images_dir / rel_image_path
-            image_bytes = await asyncio.to_thread(_render_page_to_png, pdf_doc, i, abs_image_path)
+            # Save page as PDF (for Gemini processing)
+            rel_pdf_path = Path("documents") / document.id / f"page_{page_number}.pdf"
+            abs_pdf_path = settings.images_dir / rel_pdf_path
+            pdf_bytes = await asyncio.to_thread(_extract_page_to_pdf, pdf_doc, i, abs_pdf_path)
 
-            image_url = _build_image_url(rel_image_path)
+            # Save page as PNG (for preview display)
+            rel_png_path = Path("documents") / document.id / f"page_{page_number}.png"
+            abs_png_path = settings.images_dir / rel_png_path
+            await asyncio.to_thread(_render_page_to_png, pdf_doc, i, abs_png_path)
 
-            # Gemini OCR + image understanding (structured output)
-            extraction = await _extract_page_with_gemini(image_bytes, abs_image_path)
+            # Use PNG URL for preview (image_url field)
+            png_url = _build_static_url(rel_png_path)
+
+            # Gemini OCR + document understanding (structured output) - uses PDF
+            extraction = await _extract_page_with_gemini(pdf_bytes, abs_pdf_path)
 
             page_id = str(uuid4())
             page = Page(
@@ -219,7 +242,7 @@ async def process_uploaded_document_with_progress(
                 page_text=extraction.page_text,
                 search_query=extraction.search_query,
                 img_description=extraction.img_description,
-                image_url=image_url,
+                image_url=png_url,  # PNG URL for preview
             )
             db.add(page)
 
@@ -231,7 +254,7 @@ async def process_uploaded_document_with_progress(
                     "document_id": document.id,
                     "page_number": page_number,
                     "detail_description": _detail_description(extraction),
-                    "image_url": image_url,
+                    "image_url": png_url,  # PNG URL for preview
                 }
             )
 

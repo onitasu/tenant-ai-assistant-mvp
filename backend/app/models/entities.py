@@ -75,8 +75,8 @@ class Page(Base):
     )
 
     document: Mapped["Document"] = relationship(back_populates="pages")
-    faqs: Mapped[List["FAQ"]] = relationship(back_populates="page")
-    references: Mapped[List["MessageReference"]] = relationship(back_populates="page")
+    faqs: Mapped[List["FAQ"]] = relationship(back_populates="page", passive_deletes=True)
+    references: Mapped[List["MessageReference"]] = relationship(back_populates="page", passive_deletes=True)
 
 
 class FAQ(Base):

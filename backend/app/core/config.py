@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,7 +15,11 @@ class Settings(BaseSettings):
     # API
     api_v1_prefix: str = "/api/v1"
 
-    # Database (MySQL)
+    # Database - Railway provides MYSQL_URL or DATABASE_URL
+    database_url: Optional[str] = Field(default=None, validation_alias="DATABASE_URL")
+    mysql_url: Optional[str] = Field(default=None, validation_alias="MYSQL_URL")
+
+    # Database (MySQL) - fallback for local development
     mysql_host: str = Field(default="db", validation_alias="MYSQL_HOST")
     mysql_port: int = Field(default=3306, validation_alias="MYSQL_PORT")
     mysql_user: str = Field(default="tenant_ai", validation_alias="MYSQL_USER")
@@ -36,9 +40,16 @@ class Settings(BaseSettings):
     # Image answering: use Gemini 3 Pro Preview (higher accuracy for image recognition)
     gemini_image_model: str = Field(default="gemini-3-pro-preview", validation_alias="GEMINI_IMAGE_MODEL")
 
-    # Storage
-    storage_dir: Path = Path("/app/storage")
+    # Storage - Railway volume mount path can be configured via env
+    storage_dir: Path = Field(default=Path("/app/storage"), validation_alias="STORAGE_DIR")
     backend_public_url: str = Field(default="http://localhost:8000", validation_alias="BACKEND_PUBLIC_URL")
+
+    @field_validator("storage_dir", mode="before")
+    @classmethod
+    def _parse_storage_dir(cls, v):
+        if isinstance(v, str):
+            return Path(v)
+        return v
 
     # CORS
     cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:3000"], validation_alias="CORS_ORIGINS")

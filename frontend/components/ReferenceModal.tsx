@@ -53,7 +53,7 @@ export default function ReferenceModal({
           <img
             src={ref.image_url}
             alt={`P.${ref.page_number}`}
-            style={{ maxWidth: "100%", height: "auto", borderRadius: 8 }}
+            style={{ maxWidth: "100%", maxHeight: "70vh", objectFit: "contain", borderRadius: 8 }}
           />
         </Box>
 

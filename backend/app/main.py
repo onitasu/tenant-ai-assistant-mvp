@@ -14,11 +14,11 @@ from app.services.document_processor import ensure_storage_dirs
 app = FastAPI(title="テナントAIアシスタント API", version="1.0.0")
 
 
-# CORS
+# CORS - temporarily allow all origins for debugging
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,  # Must be False when using "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )

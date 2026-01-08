@@ -206,8 +206,9 @@ async def process_uploaded_document_with_progress(
     texts: List[str] = []
     metadatas: List[dict] = []
 
-    # Process pages in batches to balance speed and memory
-    BATCH_SIZE = 3  # Process 3 pages in parallel
+    # Process pages in batches to balance speed and API rate limits
+    # Note: Gemini API has rate limits, so we process 2 pages at a time
+    BATCH_SIZE = 2  # Process 2 pages in parallel
 
     async def process_single_page(page_index: int):
         """Process a single page and return page data."""

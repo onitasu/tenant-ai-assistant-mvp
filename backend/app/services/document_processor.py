@@ -206,57 +206,76 @@ async def process_uploaded_document_with_progress(
     texts: List[str] = []
     metadatas: List[dict] = []
 
+    # Process pages in batches to balance speed and memory
+    BATCH_SIZE = 3  # Process 3 pages in parallel
+
+    async def process_single_page(page_index: int):
+        """Process a single page and return page data."""
+        page_number = page_index + 1
+
+        # Save page as PDF (for Gemini processing)
+        rel_pdf_path = Path("documents") / document.id / f"page_{page_number}.pdf"
+        abs_pdf_path = settings.images_dir / rel_pdf_path
+        pdf_bytes = await asyncio.to_thread(_extract_page_to_pdf, pdf_doc, page_index, abs_pdf_path)
+
+        # Save page as PNG (for preview display)
+        rel_png_path = Path("documents") / document.id / f"page_{page_number}.png"
+        abs_png_path = settings.images_dir / rel_png_path
+        await asyncio.to_thread(_render_page_to_png, pdf_doc, page_index, abs_png_path)
+
+        # Use PNG URL for preview (image_url field)
+        png_url = _build_static_url(rel_png_path)
+
+        # Gemini OCR + document understanding (structured output) - uses PDF
+        extraction = await _extract_page_with_gemini(pdf_bytes, abs_pdf_path)
+
+        page_id = str(uuid4())
+        return {
+            "page_id": page_id,
+            "page_number": page_number,
+            "extraction": extraction,
+            "png_url": png_url,
+        }
+
     try:
-        for i in range(total_pages):
-            page_number = i + 1
+        # Process in batches
+        for batch_start in range(0, total_pages, BATCH_SIZE):
+            batch_end = min(batch_start + BATCH_SIZE, total_pages)
+            batch_indices = list(range(batch_start, batch_end))
 
             yield {
                 "status": "processing",
-                "message": f"ページ {page_number}/{total_pages} を処理中...",
+                "message": f"ページ {batch_start + 1}-{batch_end}/{total_pages} を処理中...",
                 "total_pages": total_pages,
-                "current_page": page_number,
+                "current_page": batch_end,
             }
 
-            # Save page as PDF (for Gemini processing)
-            rel_pdf_path = Path("documents") / document.id / f"page_{page_number}.pdf"
-            abs_pdf_path = settings.images_dir / rel_pdf_path
-            pdf_bytes = await asyncio.to_thread(_extract_page_to_pdf, pdf_doc, i, abs_pdf_path)
+            # Process batch in parallel
+            tasks = [process_single_page(i) for i in batch_indices]
+            results = await asyncio.gather(*tasks)
 
-            # Save page as PNG (for preview display)
-            rel_png_path = Path("documents") / document.id / f"page_{page_number}.png"
-            abs_png_path = settings.images_dir / rel_png_path
-            await asyncio.to_thread(_render_page_to_png, pdf_doc, i, abs_png_path)
+            # Store results
+            for result in results:
+                page = Page(
+                    id=result["page_id"],
+                    document_id=document.id,
+                    page_number=result["page_number"],
+                    title=result["extraction"].title,
+                    page_text=result["extraction"].page_text,
+                    search_query=result["extraction"].search_query,
+                    img_description=result["extraction"].img_description,
+                    image_url=result["png_url"],
+                )
+                db.add(page)
 
-            # Use PNG URL for preview (image_url field)
-            png_url = _build_static_url(rel_png_path)
-
-            # Gemini OCR + document understanding (structured output) - uses PDF
-            extraction = await _extract_page_with_gemini(pdf_bytes, abs_pdf_path)
-
-            page_id = str(uuid4())
-            page = Page(
-                id=page_id,
-                document_id=document.id,
-                page_number=page_number,
-                title=extraction.title,
-                page_text=extraction.page_text,
-                search_query=extraction.search_query,
-                img_description=extraction.img_description,
-                image_url=png_url,  # PNG URL for preview
-            )
-            db.add(page)
-
-            # Collect for FAISS
-            texts.append(extraction.search_query)
-            metadatas.append(
-                {
-                    "page_id": page_id,
+                texts.append(result["extraction"].search_query)
+                metadatas.append({
+                    "page_id": result["page_id"],
                     "document_id": document.id,
-                    "page_number": page_number,
-                    "detail_description": _detail_description(extraction),
-                    "image_url": png_url,  # PNG URL for preview
-                }
-            )
+                    "page_number": result["page_number"],
+                    "detail_description": _detail_description(result["extraction"]),
+                    "image_url": result["png_url"],
+                })
 
         await db.commit()
 

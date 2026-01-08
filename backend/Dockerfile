@@ -10,10 +10,10 @@ RUN apt-get update \
 
 WORKDIR /app
 
-COPY requirements.txt /app/requirements.txt
+COPY backend/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY app /app/app
+COPY backend/app /app/app
 
 # Storage dir (mounted in docker-compose)
 RUN mkdir -p /app/storage

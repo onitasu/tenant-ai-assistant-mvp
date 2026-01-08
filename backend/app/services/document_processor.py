@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -206,9 +207,9 @@ async def process_uploaded_document_with_progress(
     texts: List[str] = []
     metadatas: List[dict] = []
 
-    # Process pages in batches to balance speed and API rate limits
-    # Note: Gemini API has rate limits, so we process 2 pages at a time
-    BATCH_SIZE = 2  # Process 2 pages in parallel
+    # Process pages in parallel batches
+    # Note: Increase memory limit on Railway if OOM occurs
+    BATCH_SIZE = 5  # Process 5 pages in parallel
 
     async def process_single_page(page_index: int):
         """Process a single page and return page data."""
@@ -277,6 +278,10 @@ async def process_uploaded_document_with_progress(
                     "detail_description": _detail_description(result["extraction"]),
                     "image_url": result["png_url"],
                 })
+
+            # Free memory after each batch
+            del results
+            gc.collect()
 
         await db.commit()
 

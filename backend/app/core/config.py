@@ -51,24 +51,24 @@ class Settings(BaseSettings):
             return Path(v)
         return v
 
-    # CORS
-    cors_origins: List[str] = Field(default_factory=lambda: ["http://localhost:3000"], validation_alias="CORS_ORIGINS")
+    # CORS - use str type to avoid pydantic-settings auto JSON parsing issues
+    cors_origins_raw: str = Field(default="http://localhost:3000", validation_alias="CORS_ORIGINS")
 
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def _parse_cors_origins(cls, v):
-        # Allow JSON array or comma-separated string in env var.
-        if isinstance(v, str):
-            try:
-                parsed = json.loads(v)
-            except json.JSONDecodeError:
-                parsed = None
+    @property
+    def cors_origins(self) -> List[str]:
+        """Parse CORS origins from raw string (JSON array or comma-separated)."""
+        v = self.cors_origins_raw
+        if not v:
+            return ["http://localhost:3000"]
+        # Try JSON array first
+        try:
+            parsed = json.loads(v)
             if isinstance(parsed, list):
                 return [str(s).strip() for s in parsed if str(s).strip()]
-            if isinstance(parsed, str):
-                return [parsed.strip()] if parsed.strip() else []
-            return [s.strip() for s in v.split(",") if s.strip()]
-        return v
+        except json.JSONDecodeError:
+            pass
+        # Fall back to comma-separated
+        return [s.strip() for s in v.split(",") if s.strip()]
 
     # Derived directories
     @property

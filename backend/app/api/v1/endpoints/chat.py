@@ -6,19 +6,28 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.entities import Conversation, Message, MessageReference, Page, MessageRole
-from app.schemas.chat import ChatRequest, ChatResponse, FAQResult, Reference
+from app.schemas.chat import ChatRequest, ChatResponse, FAQResult, Reference, RelatedFaqResponse
 from app.schemas.conversations import ConversationResponse, MessageResponse
-from app.services.chat_service import handle_chat
+from app.services.chat_service import handle_chat, handle_related_faqs
 
 router = APIRouter()
 
 
 @router.post("", response_model=ChatResponse)
 async def post_chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
-    faq_results, answer, references = await handle_chat(db, user_input=req.query, session_id=req.session_id)
+    answer, references = await handle_chat(db, user_input=req.query, session_id=req.session_id)
 
     return ChatResponse(
-        faq_results=[
+        answer=answer,
+        references=[Reference(**ref) for ref in references],
+    )
+
+
+@router.post("/related-faqs", response_model=RelatedFaqResponse)
+async def post_related_faqs(req: ChatRequest, db: AsyncSession = Depends(get_db)):
+    faq_results = await handle_related_faqs(db, user_input=req.query, session_id=req.session_id)
+    return RelatedFaqResponse(
+        items=[
             FAQResult(
                 id=r.id,
                 title=r.title,
@@ -30,9 +39,7 @@ async def post_chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
                 relevance_score=r.relevance_score,
             )
             for r in faq_results
-        ],
-        answer=answer,
-        references=[Reference(**ref) for ref in references],
+        ]
     )
 
 

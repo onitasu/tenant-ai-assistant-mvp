@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Optional, List
 
 from pydantic import Field
@@ -14,7 +15,7 @@ class FAQResponse(ORMBase):
     answer: str
     page_id: Optional[str] = None
     display_order: int = 0
-    created_at: Optional[str] = None
+    created_at: Optional[datetime] = None
 
 
 class FAQListResponse(ORMBase):

@@ -13,9 +13,6 @@ import {
   Toolbar,
   Typography,
   Alert,
-  List,
-  ListItem,
-  ListItemText,
 } from "@mui/material";
 
 import FAQList from "../components/FAQList";
@@ -23,7 +20,7 @@ import ChatInput from "../components/ChatInput";
 import ChatMessageList, { ChatMessage } from "../components/ChatMessageList";
 import ReferenceModal from "../components/ReferenceModal";
 import { apiGet, apiPostJson } from "../lib/api";
-import type { FAQ, FAQListResponse, ChatResponse, FAQResult, Reference } from "../lib/types";
+import type { FAQ, FAQListResponse, ChatResponse, RelatedFaqResponse, Reference } from "../lib/types";
 
 function getOrCreateSessionId(): string {
   if (typeof window === "undefined") return "sess_local";
@@ -42,8 +39,7 @@ export default function ChatPage() {
   const [input, setInput] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
-
-  const [relatedFaqs, setRelatedFaqs] = React.useState<FAQResult[]>([]);
+  const isSendingRef = React.useRef(false);
 
   // Reference modal state
   const [refOpen, setRefOpen] = React.useState(false);
@@ -65,29 +61,72 @@ export default function ChatPage() {
 
   const sendQuestion = async (question: string) => {
     if (!question.trim()) return;
+    if (loading || isSendingRef.current) return;
+    isSendingRef.current = true;
 
     setError(null);
     setLoading(true);
 
-    setMessages((prev) => [...prev, { role: "user", content: question }]);
+    const userMessageId = `user_${crypto.randomUUID()}`;
+    const faqMessageId = `faq_${crypto.randomUUID()}`;
+
+    setMessages((prev) => [
+      ...prev,
+      { id: userMessageId, role: "user", content: question },
+      { id: faqMessageId, role: "faq", loading: true, faqItems: [] },
+    ]);
     setInput("");
 
-    try {
-      const res = await apiPostJson<ChatResponse>("/chat", {
-        query: question,
-        session_id: sessionId,
+    const faqRequest = apiPostJson<RelatedFaqResponse>("/chat/related-faqs", {
+      query: question,
+      session_id: sessionId,
+    });
+    const chatRequest = apiPostJson<ChatResponse>("/chat", {
+      query: question,
+      session_id: sessionId,
+    });
+
+    faqRequest
+      .then((res) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === faqMessageId
+              ? { ...m, loading: false, faqItems: res.items, error: undefined }
+              : m
+          )
+        );
+      })
+      .catch(() => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === faqMessageId
+              ? {
+                  ...m,
+                  loading: false,
+                  faqItems: [],
+                  error: "関連FAQの取得に失敗しました",
+                }
+              : m
+          )
+        );
       });
 
-      setRelatedFaqs(res.faq_results);
-
+    try {
+      const res = await chatRequest;
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: res.answer, references: res.references },
+        {
+          id: `assistant_${crypto.randomUUID()}`,
+          role: "assistant",
+          content: res.answer,
+          references: res.references,
+        },
       ]);
     } catch (e: any) {
       setError(e?.message || String(e));
     } finally {
       setLoading(false);
+      isSendingRef.current = false;
     }
   };
 
@@ -117,34 +156,16 @@ export default function ChatPage() {
           </Alert>
         )}
 
-        <Paper sx={{ p: 2, mb: 2 }}>
+        <Box sx={{ mb: 2 }}>
           <FAQList
             faqs={faqs}
+            disabled={loading}
             onSelect={(q) => {
               // FAQタイトルをそのまま質問として送信
               sendQuestion(q);
             }}
           />
-        </Paper>
-
-        {relatedFaqs.length > 0 && (
-          <Paper sx={{ p: 2, mb: 2 }}>
-            <Typography variant="h6" sx={{ mb: 1 }}>
-              🔎 関連FAQ候補
-            </Typography>
-            <List dense>
-              {relatedFaqs.map((f) => (
-                <ListItem key={f.id} disableGutters>
-                  <ListItemText
-                    primary={`${f.title} (score: ${f.relevance_score.toFixed(2)})`}
-                    secondary={f.answer}
-                    secondaryTypographyProps={{ sx: { whiteSpace: "pre-wrap" } }}
-                  />
-                </ListItem>
-              ))}
-            </List>
-          </Paper>
-        )}
+        </Box>
 
         <Paper sx={{ p: 2 }}>
           <Typography variant="h6" sx={{ mb: 1 }}>

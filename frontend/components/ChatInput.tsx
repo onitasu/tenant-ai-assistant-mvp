@@ -20,10 +20,12 @@ export default function ChatInput({
         fullWidth
         placeholder="ご質問を入力..."
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) {
             e.preventDefault();
+            if (disabled || !value.trim()) return;
             onSend();
           }
         }}

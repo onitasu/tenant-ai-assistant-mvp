@@ -52,6 +52,10 @@ export default function AdminPage() {
   const [docs, setDocs] = React.useState<Document[]>([]);
   const [faqs, setFaqs] = React.useState<FAQ[]>([]);
   const [pages, setPages] = React.useState<Page[]>([]);
+  const [pagesLoading, setPagesLoading] = React.useState(false);
+  const [selectedDocId, setSelectedDocId] = React.useState("");
+  const [pageDetailOpen, setPageDetailOpen] = React.useState(false);
+  const [pageDetail, setPageDetail] = React.useState<Page | null>(null);
 
   const [error, setError] = React.useState<string | null>(null);
 
@@ -93,9 +97,20 @@ export default function AdminPage() {
     refresh();
   }, []);
 
+  React.useEffect(() => {
+    if (docs.length === 0) {
+      setSelectedDocId("");
+      return;
+    }
+    if (!selectedDocId || !docs.some((d) => d.id === selectedDocId)) {
+      setSelectedDocId(docs[0].id);
+    }
+  }, [docs, selectedDocId]);
+
   // Load all pages (for FAQ page selector)
   React.useEffect(() => {
     (async () => {
+      setPagesLoading(true);
       try {
         const all: Page[] = [];
         for (const doc of docs) {
@@ -105,6 +120,8 @@ export default function AdminPage() {
         setPages(all);
       } catch {
         // ignore
+      } finally {
+        setPagesLoading(false);
       }
     })();
   }, [docs]);
@@ -237,6 +254,21 @@ export default function AdminPage() {
       setError(e?.message || String(e));
     }
   };
+
+  const openPageDetail = (page: Page) => {
+    setPageDetail(page);
+    setPageDetailOpen(true);
+  };
+
+  const closePageDetail = () => {
+    setPageDetailOpen(false);
+    setPageDetail(null);
+  };
+
+  const pagesForSelectedDoc = React.useMemo(() => {
+    if (!selectedDocId) return [];
+    return pages.filter((p) => p.document_id === selectedDocId);
+  }, [pages, selectedDocId]);
 
   const pageLabel = (p: Page): string => {
     const doc = docs.find((d) => d.id === p.document_id);
@@ -401,6 +433,71 @@ export default function AdminPage() {
           </Table>
         </Paper>
 
+        {/* Pages */}
+        <Paper sx={{ p: 2, mb: 3 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2, flexWrap: "wrap" }}>
+            <Typography variant="h6" sx={{ flexGrow: 1 }}>
+              ページ構造化データ
+            </Typography>
+            <TextField
+              select
+              size="small"
+              label="ドキュメント"
+              value={selectedDocId}
+              onChange={(e) => setSelectedDocId(e.target.value)}
+              sx={{ minWidth: 240 }}
+              disabled={docs.length === 0}
+            >
+              {docs.map((d) => (
+                <MenuItem key={d.id} value={d.id}>
+                  {d.title}
+                </MenuItem>
+              ))}
+            </TextField>
+          </Box>
+
+          {pagesLoading && <LinearProgress sx={{ mb: 2 }} />}
+
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>ページ</TableCell>
+                <TableCell>タイトル</TableCell>
+                <TableCell>検索クエリ</TableCell>
+                <TableCell align="right">操作</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {pagesForSelectedDoc.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell>P.{p.page_number}</TableCell>
+                  <TableCell>{p.title || "-"}</TableCell>
+                  <TableCell sx={{ maxWidth: 360 }}>
+                    <Typography
+                      variant="body2"
+                      sx={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                    >
+                      {p.search_query || "-"}
+                    </Typography>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Button variant="outlined" size="small" onClick={() => openPageDetail(p)}>
+                      構造化データを見る
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!pagesLoading && pagesForSelectedDoc.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    {docs.length === 0 ? "ドキュメントがありません" : "ページがありません"}
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </Paper>
+
         {/* FAQs */}
         <Paper sx={{ p: 2 }}>
           <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
@@ -502,6 +599,82 @@ export default function AdminPage() {
           <Button variant="contained" onClick={onUpload} disabled={!uploadFile || uploading}>
             {uploading ? <CircularProgress size={18} /> : "アップロード"}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Page Detail Dialog */}
+      <Dialog open={pageDetailOpen} onClose={closePageDetail} fullWidth maxWidth="lg">
+        <DialogTitle>
+          {pageDetail ? `構造化データ: ${pageLabel(pageDetail)}` : "構造化データ"}
+        </DialogTitle>
+        <DialogContent>
+          {pageDetail ? (
+            <Box
+              sx={{
+                display: "grid",
+                gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" },
+                gap: 2,
+              }}
+            >
+              <Box sx={{ display: "flex", justifyContent: "center" }}>
+                {pageDetail.image_url ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={pageDetail.image_url}
+                      alt={`P.${pageDetail.page_number}`}
+                      style={{ maxWidth: "100%", height: "auto", borderRadius: 8 }}
+                    />
+                  </>
+                ) : (
+                  <Typography variant="body2" color="text.secondary">
+                    画像がありません
+                  </Typography>
+                )}
+              </Box>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    タイトル
+                  </Typography>
+                  <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    {pageDetail.title || "未抽出"}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    検索クエリ
+                  </Typography>
+                  <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    {pageDetail.search_query || "未抽出"}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    本文テキスト
+                  </Typography>
+                  <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    {pageDetail.page_text || "未抽出"}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="subtitle2" color="text.secondary">
+                    図表/画像の説明
+                  </Typography>
+                  <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                    {pageDetail.img_description || "未抽出"}
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              表示できるデータがありません。
+            </Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closePageDetail}>閉じる</Button>
         </DialogActions>
       </Dialog>
 

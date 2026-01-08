@@ -54,7 +54,10 @@ export type FAQResult = {
 };
 
 export type ChatResponse = {
-  faq_results: FAQResult[];
   answer: string;
   references: Reference[];
+};
+
+export type RelatedFaqResponse = {
+  items: FAQResult[];
 };

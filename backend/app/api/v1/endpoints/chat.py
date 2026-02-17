@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,13 +12,19 @@ from app.schemas.chat import ChatRequest, ChatResponse, FAQResult, PrepareRespon
 from app.schemas.conversations import ConversationResponse, MessageResponse
 from app.services.chat_service import handle_chat, handle_prepare
 
+logger = logging.getLogger("uvicorn.error")
+
 router = APIRouter()
 
 
 @router.post("/prepare", response_model=PrepareResponse)
 async def post_prepare(req: ChatRequest, db: AsyncSession = Depends(get_db)):
     """クエリ生成とFAQ検索のみを行う（高速レスポンス用）"""
-    prepared_query, faq_results = await handle_prepare(db, user_input=req.query, session_id=req.session_id)
+    try:
+        prepared_query, faq_results = await handle_prepare(db, user_input=req.query, session_id=req.session_id)
+    except Exception as e:
+        logger.error(f"handle_prepare failed: {type(e).__name__}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Prepare failed: {type(e).__name__}: {e}")
 
     return PrepareResponse(
         prepared_query=prepared_query,
@@ -38,12 +46,16 @@ async def post_prepare(req: ChatRequest, db: AsyncSession = Depends(get_db)):
 
 @router.post("", response_model=ChatResponse)
 async def post_chat(req: ChatRequest, db: AsyncSession = Depends(get_db)):
-    answer, references = await handle_chat(
-        db,
-        user_input=req.query,
-        session_id=req.session_id,
-        prepared_query=req.prepared_query,
-    )
+    try:
+        answer, references = await handle_chat(
+            db,
+            user_input=req.query,
+            session_id=req.session_id,
+            prepared_query=req.prepared_query,
+        )
+    except Exception as e:
+        logger.error(f"handle_chat failed: {type(e).__name__}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Chat failed: {type(e).__name__}: {e}")
 
     return ChatResponse(
         answer=answer,
